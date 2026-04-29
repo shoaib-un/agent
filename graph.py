@@ -20,7 +20,7 @@ def _route_after_router(state: dict) -> str:
     """
     trace = state.get("trace", {})
     current_stage = trace.get("current_stage", "")
-    if current_stage == "generate_summary":
+    if current_stage == "scene_7_summary":
         return "summary"
     return "stage_executor"
 

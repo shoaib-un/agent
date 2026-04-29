@@ -133,7 +133,6 @@ def stage_executor_node(state: dict) -> dict:
 
     # Build the executor prompt
     prompt_text = STAGE_EXECUTOR_PROMPT.format(
-        system_prompt=SYSTEM_PROMPT,
         stage_id=current_stage,
         stage_description=stage_obj.description if stage_obj else "",
         stage_instructions=stage_instructions,
@@ -147,7 +146,7 @@ def stage_executor_node(state: dict) -> dict:
         SystemMessage(content=SYSTEM_PROMPT),
         HumanMessage(content=prompt_text),
     ])
-
+    logger.info(f"Result: {result}")
     logger.info(
         f"Stage '{current_stage}' -> data: {result.data_extracted}, "
         f"complete: {result.stage_complete}"
@@ -155,7 +154,9 @@ def stage_executor_node(state: dict) -> dict:
 
     # Merge extracted data into collected_data
     updated_data = dict(collected_data)
-    updated_data.update(result.data_extracted)
+    if result.data_extracted:
+        for item in result.data_extracted:
+            updated_data[item.key] = item.value
 
     # Append the AI response to messages
     updated_messages = list(state.get("messages", []))
@@ -170,60 +171,32 @@ def stage_executor_node(state: dict) -> dict:
 
 def summary_node(state: dict) -> dict:
     """
-    Generates a structured clinical summary (ClinicalSummary) from all
-    collected data. Only invoked when current stage is 'generate_summary'.
+    Generates a natural language clinical summary from collected data only.
+    Invoked when current stage is 'scene_7_summary'.
+    Does NOT use structured output — just generates a plain text summary.
     """
     collected_data = state.get("collected_data", {})
-    messages = state.get("messages", [])
+    stage_instructions = STAGE_PROMPTS.get("scene_7_summary", "")
 
-    prompt_text = f"""Generate a complete clinical summary from the following patient interaction.
+    prompt_text = f"""{stage_instructions}
 
-COLLECTED DATA:
+PATIENT DATA COLLECTED SO FAR:
 {_format_collected_data(collected_data)}
 
-FULL CONVERSATION:
-{_format_conversation(messages)}
+Write the summary now. Use ONLY the data above. Do not add anything else."""
 
-Compile this into a structured clinical note."""
-
-    structured_llm = model.with_structured_output(ClinicalSummary, method="function_calling")
-    summary: ClinicalSummary = structured_llm.invoke([
-        SystemMessage(content="You are a clinical documentation specialist. Generate a structured clinical summary."),
+    result = model.invoke([
+        SystemMessage(content="You are a clinical documentation assistant. Summarize ONLY the data provided. Do NOT add diagnoses, assessments, plans, or any information not explicitly listed."),
         HumanMessage(content=prompt_text),
     ])
 
-    logger.info("Clinical summary generated successfully.")
+    summary_text = result.content
+    logger.info("Clinical summary generated from collected data.")
 
-    # Format the summary as readable text
-    summary_text = f"""
-CLINICAL SUMMARY
-{'=' * 50}
-Patient: {summary.patient_name}
-Chief Complaint: {summary.chief_complaint}
-
-HISTORY OF PRESENT ILLNESS:
-{summary.history_of_present_illness}
-
-SYMPTOMS: {', '.join(summary.symptoms) if summary.symptoms else 'N/A'}
-SEVERITY: {summary.severity or 'N/A'}
-ONSET/DURATION: {summary.onset_and_duration or 'N/A'}
-
-MEDICATIONS: {', '.join(summary.medications) if summary.medications else 'None reported'}
-ALLERGIES: {', '.join(summary.allergies) if summary.allergies else 'NKDA'}
-
-SOCIAL HISTORY: {summary.social_history or 'N/A'}
-FAMILY HISTORY: {summary.family_history or 'N/A'}
-
-ASSESSMENT: {summary.assessment or 'Pending clinician review'}
-PLAN: {summary.plan or 'Pending clinician review'}
-{'=' * 50}
-"""
-
-    updated_messages = list(messages)
+    updated_messages = list(state.get("messages", []))
     updated_messages.append(AIMessage(content=summary_text))
 
     new_state = dict(state)
     new_state["messages"] = updated_messages
     new_state["response"] = summary_text
-    new_state["collected_data"] = {**collected_data, "clinical_summary": summary.model_dump()}
     return new_state

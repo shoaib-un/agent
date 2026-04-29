@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
+class ExtractedData(BaseModel):
+    key: str = Field(description="The name of the clinical data field (e.g., 'chief_complaint', 'severity', 'patient_acknowledged')")
+    value: str = Field(description="The extracted value")
+
+
 class StageDecision(BaseModel):
     """
     Router output: the LLM decides which stage to transition to next.
@@ -26,6 +31,11 @@ class StageDecision(BaseModel):
         description="Confidence score (0-1) for this routing decision."
     )
 
+class ClinicalFlag(BaseModel):
+    type: str = Field(description="Type of clinical concern")
+    severity: str = Field(description="low | medium | high | critical")
+    reason: str = Field(description="Why this flag was triggered")
+
 
 class StageResponse(BaseModel):
     """
@@ -35,10 +45,9 @@ class StageResponse(BaseModel):
     response_to_patient: str = Field(
         description="The clinician's natural language response to the patient. Should be empathetic, clear, and professional."
     )
-    data_extracted: Dict[str, Any] = Field(
-        default_factory=dict,
-        description="Key-value pairs of clinical data extracted from the patient's response in this turn. "
-                    "Examples: {'symptom': 'chest pain', 'onset': '2 days ago', 'severity': '7/10'}"
+    data_extracted: List[ExtractedData] = Field(
+        default_factory=list,
+        description="List of extracted data points from the patient's response in this turn."
     )
     stage_complete: bool = Field(
         default=False,
@@ -47,6 +56,11 @@ class StageResponse(BaseModel):
     follow_up_question: Optional[str] = Field(
         default=None,
         description="If stage_complete is False, the specific follow-up question embedded in the response."
+    )
+    # NEW: explicit risk signaling
+    flags: List[ClinicalFlag] = Field(
+        default_factory=list,
+        description="Clinical risks detected during this stage"
     )
 
 

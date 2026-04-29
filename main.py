@@ -24,7 +24,7 @@ def create_initial_state() -> dict:
     """Create a fresh state dict for a new conversation."""
     state = ClinicianAgentState(
         stages=STAGES,
-        trace=ExecutionTrace(current_stage="greet"),
+        trace=ExecutionTrace(),
         context=DecisionContext(),
     )
     return state.model_dump()
@@ -39,6 +39,7 @@ def run_conversation():
 
     # Initialize state
     state = create_initial_state()
+    logger.info(f"Initialized conversation state: {state}")
 
     # --- First turn: greeting (no user input needed) ---
     logger.info("Starting conversation — greeting phase")
@@ -99,7 +100,7 @@ def run_conversation():
         logger.info(
             f"Turn complete — stage: {trace.get('current_stage')} | "
             f"visited: {trace.get('visited_stages')} | "
-            f"data keys: {list(state.get('collected_data', {}).keys())}"
+            f"data keys: {list(state.get('collected_data', {}))}"
         )
 
     # Print final collected data summary

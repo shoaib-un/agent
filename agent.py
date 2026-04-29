@@ -1,17 +1,24 @@
 from pydantic import BaseModel, Field
-from typing import Any, Dict, List, Optional
-from langchain_core.messages import BaseMessage
+from typing import Any, Dict, List, Optional, Literal
 
 
-class PatientHistory(BaseModel):
-    """Represents the medical history of a patient."""
-    patient_id: str = Field(default="", description="The unique identifier for the patient.")
-    patient_name: str = Field(default="", description="The name of the patient.")
-    medical_conditions: List[str] = Field(default_factory=list, description="A list of medical conditions the patient has.")
-    medications: List[str] = Field(default_factory=list, description="A list of medications the patient is taking.")
-    allergies: List[str] = Field(default_factory=list, description="A list of allergies the patient has.")
-    past_procedures: List[str] = Field(default_factory=list, description="A list of past medical procedures the patient has undergone.")
-    family_history: Dict[str, Any] = Field(default_factory=dict, description="The family medical history of the patient.")
+class PatientDataCaptured(BaseModel):
+    """Represents detailed clinical data captured from the patient during the conversation."""
+    chief_complaint : Optional[str] = Field(description="The patient's main reason for seeking care, in their own words.", default=None)
+    pain_character : Optional[Literal["pressure", "squeezing", "burning", "sharp", "dull", "other"]] = Field(description="The character of the patient's chest pain.", default=None)
+    location : Optional[str] = Field(description="The location of the patient's chest pain.", default=None)
+    radiation : Optional[str] = Field(description="Whether the pain radiates to other areas.", default=None)
+    severity : Optional[Literal[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]] = Field(description="The severity of the patient's chest pain on a 0-10 scale.", default=None)
+    timing : Optional[Literal["exertional", "rest", "nocturnal"]] = Field(description="When the patient experiences the chest pain.", default=None)
+    functional_capacity : Optional[str] = Field(description="The patient's functional capacity if exertional.", default=None)
+    relieving_factors : Optional[str] = Field(description="Factors that relieve the patient's chest pain.", default=None)
+    dyspnea : Optional[Literal["exertional", "orthopnea"]] = Field(description="Whether the patient has dyspnea.", default=None)
+    fatigue : Optional[bool] = Field(description="Whether the patient has fatigue.", default=None)
+    palpitations : Optional[bool] = Field(description="Whether the patient has palpitations.", default=None)
+    lightheadedness : Optional[bool] = Field(description="Whether the patient has lightheadedness.", default=None)
+    syncope : Optional[bool] = Field(description="Whether the patient has syncope.", default=None)
+    edema : Optional[bool] = Field(description="Whether the patient has edema.", default=None)
+    patient_concerns : Optional[str] = Field(description="The patient's concerns at the end of the conversation.", default=None)
 
 
 class Stage(BaseModel):
@@ -37,7 +44,7 @@ class ClinicianAgentState(BaseModel):
     stages: Dict[str, Stage]
     trace: ExecutionTrace = Field(default_factory=ExecutionTrace)
     context: DecisionContext = Field(default_factory=DecisionContext)
-    patient_history: PatientHistory = Field(default_factory=PatientHistory)
+    patient_data: PatientDataCaptured = Field(default_factory=PatientDataCaptured)
 
     # --- New fields for conversational loop ---
     messages: List[Any] = Field(
@@ -55,84 +62,97 @@ class ClinicianAgentState(BaseModel):
 
 
 STAGES = {
-    "greet": Stage(
-        stage_id="greet",
-        description="Greet patient and confirm identity",
-        next_stages=["confirm_reason"]
+    "scene_1_greeting": Stage(
+        stage_id="scene_1_greeting",
+        description="Initial greeting, introduce role, explain angiogram, wait for acknowledgment",
+        next_stages=["scene_2_open_conversation"]
     ),
-    "confirm_reason": Stage(
-        stage_id="confirm_reason",
-        description="Confirm reason for visit from referral/context",
-        next_stages=["expand_symptoms"]
+
+    "scene_2_open_conversation": Stage(
+        stage_id="scene_2_open_conversation",
+        description="Extract patient acknowledgment, ask open-ended question about what's been bothering them",
+        next_stages=["scene_3a_pain_character"]
     ),
-    "expand_symptoms": Stage(
-        stage_id="expand_symptoms",
-        description="Ask open-ended questions to expand symptoms",
-        next_stages=["quantify_severity"]
+
+    "scene_3a_pain_character": Stage(
+        stage_id="scene_3a_pain_character",
+        description="Extract chief complaint, ask patient to describe the feeling in their chest",
+        next_stages=["scene_3b_location_radiation"]
     ),
-    "quantify_severity": Stage(
-        stage_id="quantify_severity",
-        description="Assess severity (scale, impact, frequency)",
-        next_stages=["associated_symptoms"]
+
+    "scene_3b_location_radiation": Stage(
+        stage_id="scene_3b_location_radiation",
+        description="Extract pain character, ask where they feel it and if it moves anywhere",
+        next_stages=["scene_3c_severity"]
     ),
-    "associated_symptoms": Stage(
-        stage_id="associated_symptoms",
-        description="Check for related symptoms (e.g., dyspnea, nausea)",
-        next_stages=["timeline"]
+
+    "scene_3c_severity": Stage(
+        stage_id="scene_3c_severity",
+        description="Extract location and radiation, ask pain severity on 0-10 scale",
+        next_stages=["scene_3d_timing"]
     ),
-    "timeline": Stage(
-        stage_id="timeline",
-        description="Establish onset, duration, progression",
-        next_stages=["medications"]
+
+    "scene_3d_timing": Stage(
+        stage_id="scene_3d_timing",
+        description="Extract severity, ask about timing — exertional, rest, or nocturnal",
+        next_stages=["scene_3e_relieving_factors"]
     ),
-    "medications": Stage(
-        stage_id="medications",
-        description="Review current medications",
-        next_stages=["allergies"]
+
+    "scene_3e_relieving_factors": Stage(
+        stage_id="scene_3e_relieving_factors",
+        description="Extract timing, ask what makes the pain go away — rest, nitroglycerin, etc.",
+        next_stages=["scene_4a_dyspnea"]
     ),
-    "allergies": Stage(
-        stage_id="allergies",
-        description="Check known allergies",
-        next_stages=["social_history"]
+
+    "scene_4a_dyspnea": Stage(
+        stage_id="scene_4a_dyspnea",
+        description="Extract relieving factors, ask about shortness of breath",
+        next_stages=["scene_4b_fatigue"]
     ),
-    "social_history": Stage(
-        stage_id="social_history",
-        description="Capture smoking, alcohol, lifestyle",
-        next_stages=["family_history"]
+
+    "scene_4b_fatigue": Stage(
+        stage_id="scene_4b_fatigue",
+        description="Extract dyspnea data, ask about fatigue and energy levels",
+        next_stages=["scene_4c_palpitations"]
     ),
-    "family_history": Stage(
-        stage_id="family_history",
-        description="Capture relevant family medical history",
-        next_stages=["explain_procedure"]
+
+    "scene_4c_palpitations": Stage(
+        stage_id="scene_4c_palpitations",
+        description="Extract fatigue data, ask about heart fluttering or racing",
+        next_stages=["scene_4d_lightheadedness_syncope"]
     ),
-    "explain_procedure": Stage(
-        stage_id="explain_procedure",
-        description="Explain planned procedure or evaluation",
-        next_stages=["explain_risks"]
+
+    "scene_4d_lightheadedness_syncope": Stage(
+        stage_id="scene_4d_lightheadedness_syncope",
+        description="Extract palpitations data, ask about lightheadedness and blackouts",
+        next_stages=["scene_4e_edema"]
     ),
-    "explain_risks": Stage(
-        stage_id="explain_risks",
-        description="Explain risks and benefits",
-        next_stages=["answer_questions"]
+
+    "scene_4e_edema": Stage(
+        stage_id="scene_4e_edema",
+        description="Extract lightheadedness/syncope data, ask about leg/ankle swelling",
+        next_stages=["scene_5_close"]
     ),
-    "answer_questions": Stage(
-        stage_id="answer_questions",
-        description="Address patient questions",
-        next_stages=["consent"]
+
+    "scene_5_close": Stage(
+        stage_id="scene_5_close",
+        description=(
+            "Extract associated symptom data from Scene 4, close interaction, ask for patient concerns"
+        ),
+        next_stages=["scene_6_farewell"]
     ),
-    "consent": Stage(
-        stage_id="consent",
-        description="Obtain informed consent",
-        next_stages=["generate_summary"]
+
+    "scene_6_farewell": Stage(
+        stage_id="scene_6_farewell",
+        description=(
+            "Extract patient concerns from Scene 5, deliver farewell message, handoff to clinical team"
+        ),
+        next_stages=["scene_7_summary"]
     ),
-    "generate_summary": Stage(
-        stage_id="generate_summary",
-        description="Generate structured clinical summary",
-        next_stages=["human_review"]
-    ),
-    "human_review": Stage(
-        stage_id="human_review",
-        description="Send case for clinician review",
+
+    "scene_7_summary": Stage(
+        stage_id="scene_7_summary",
+        description="Generate a natural language clinical summary from all collected data",
         next_stages=[]
     ),
 }
